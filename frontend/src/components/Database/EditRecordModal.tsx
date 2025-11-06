@@ -85,9 +85,11 @@ export default function EditRecordModal({ record, isOpen, onClose }: EditRecordM
 
     setSaving(true)
     try {
-      await api.put(`/records/${record.id}`, formData)
+      const response = await api.put(`/records/${record.id}`, formData)
+      console.log('Update response:', response.data)
       toast.success('Record updated successfully')
-      queryClient.invalidateQueries({ queryKey: ['records'] })
+      // Force refetch to get updated timestamp
+      await queryClient.refetchQueries({ queryKey: ['records'] })
       queryClient.invalidateQueries({ queryKey: ['stats'] })
       onClose()
     } catch (error: any) {
@@ -248,7 +250,27 @@ export default function EditRecordModal({ record, isOpen, onClose }: EditRecordM
                   <div>
                     <span className="text-gray-500">Last Updated:</span>
                     <span className="ml-2 text-gray-900 font-medium">
-                      {record.updated_at ? new Date(record.updated_at).toLocaleString() : '-'}
+                      {record.updated_at ? (() => {
+                        // Ensure timestamp is treated as UTC
+                        const timestampStr = record.updated_at.includes('+') || record.updated_at.endsWith('Z') 
+                          ? record.updated_at 
+                          : record.updated_at + 'Z'
+                        const date = new Date(timestampStr)
+                        return (
+                          <span>
+                            {date.toLocaleString('en-US', {
+                              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })}
+                            <span className="ml-2 text-xs text-gray-500">(UAE Time)</span>
+                          </span>
+                        )
+                      })() : '-'}
                     </span>
                   </div>
                 </div>

@@ -228,34 +228,248 @@ export default function PreviewChanges({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-3 mb-3">
                           <span className="font-semibold text-gray-900">ID: {update.id}</span>
-                          <span
-                            className={`badge ${
-                              update.match_type === 'email_match'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : update.match_type === 'phone_match'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-green-100 text-green-800'
-                            }`}
-                          >
-                            {update.match_type?.replace('_', ' ')}
-                          </span>
+                          {update.match_type === 'email_match' && (
+                            <span className="badge bg-yellow-100 text-yellow-800">
+                              📧 Email Match
+                            </span>
+                          )}
+                          {update.match_type === 'phone_match' && (
+                            <span className="badge bg-blue-100 text-blue-800">
+                              📞 Phone Match
+                            </span>
+                          )}
+                          {update.match_type === 'both_match' && (
+                            <div className="flex items-center space-x-2">
+                              <span className="badge bg-yellow-100 text-yellow-800">
+                                📧 Email Match
+                              </span>
+                              <span className="text-gray-400">+</span>
+                              <span className="badge bg-blue-100 text-blue-800">
+                                📞 Phone Match
+                              </span>
+                            </div>
+                          )}
                           {update.identity_conflict && (
                             <span className="badge bg-red-100 text-red-800">
-                              Identity Conflict
+                              ⚠️ Identity Conflict
                             </span>
                           )}
                         </div>
-                        <div className="space-y-2">
-                          {Object.entries(update.changes || {}).map(([key, value]: any) => (
-                            <div key={key} className="flex items-start space-x-3 text-sm bg-white p-3 rounded-lg border border-gray-200">
-                              <span className="font-medium text-gray-700 min-w-[100px]">{key}:</span>
-                              <div className="flex-1 flex items-center space-x-2">
-                                <span className="text-gray-500 line-through">{value.old || '(empty)'}</span>
-                                <span className="text-gray-400">→</span>
-                                <span className="font-medium text-green-600">{value.new || '(empty)'}</span>
+                        
+                        {/* Only show side-by-side comparison if there are changes */}
+                        {update.changes && Object.keys(update.changes).length > 0 ? (
+                          <>
+                            {/* Side-by-side comparison */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                              {/* Old Record (from database) */}
+                              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+                                  <span className="text-gray-500">📋</span>
+                                  <span>Current in Database (ID: {update.id})</span>
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Company</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.old_record?.company || '-'}</p>
+                                  </div>
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Name</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.old_record?.name || '-'}</p>
+                                  </div>
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Surname</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.old_record?.surname || '-'}</p>
+                                  </div>
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.old_record?.email || '-'}</p>
+                                  </div>
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Phone</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.old_record?.phone || '-'}</p>
+                                  </div>
+                                  {update.old_record?.position && (
+                                    <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Position</span>
+                                      <p className="text-sm font-medium text-gray-900 mt-1">{update.old_record.position}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* New Record (from Excel file) */}
+                              <div className="bg-white p-4 rounded-lg border border-blue-200">
+                                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+                                  <span className="text-blue-600">📝</span>
+                                  <span>From Upload File (Will update)</span>
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Company</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.new_record?.Company || '-'}</p>
+                                  </div>
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Name</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.new_record?.Name || '-'}</p>
+                                  </div>
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Surname</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.new_record?.Surname || '-'}</p>
+                                  </div>
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.new_record?.Email || '-'}</p>
+                                  </div>
+                                  <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Phone</span>
+                                    <p className="text-sm font-medium text-gray-900 mt-1">{update.new_record?.Phone || '-'}</p>
+                                  </div>
+                                  {update.new_record?.Position && (
+                                    <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Position</span>
+                                      <p className="text-sm font-medium text-gray-900 mt-1">{update.new_record.Position}</p>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
+                            
+                            {/* Changes Summary - Only show changed fields */}
+                            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <h4 className="text-xs font-semibold text-blue-900 mb-2">Changes:</h4>
+                              <div className="space-y-2">
+                                {Object.entries(update.changes).map(([key, value]: any) => (
+                                  <div key={key} className="flex items-start space-x-3 text-sm bg-white p-3 rounded-lg border border-blue-200">
+                                    <span className="font-medium text-gray-700 min-w-[100px]">{key}:</span>
+                                    <div className="flex-1 flex items-center space-x-2">
+                                      <span className="text-gray-500 line-through">{value.old || '(empty)'}</span>
+                                      <span className="text-gray-400">→</span>
+                                      <span className="font-medium text-blue-700">{value.new || '(empty)'}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          /* No changes - show compact view */
+                          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                            <p className="text-sm text-gray-600">
+                              ✓ No changes - Record matches existing data
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Duplicates Section */}
+          {previewData.duplicates && previewData.duplicates.length > 0 && (
+            <div>
+              <div className="flex items-center space-x-3 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600" />
+                  <span>Duplicates ({previewData.duplicates.length})</span>
+                </h3>
+              </div>
+              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-start space-x-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-yellow-900">
+                      Duplicates will be skipped
+                    </p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      These records already exist in the database (matched by email or phone). They will be skipped and not inserted during the update.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {previewData.duplicates.map((duplicate: any, idx: number) => (
+                  <div
+                    key={idx}
+                    className="p-4 border-2 rounded-xl border-yellow-200 bg-yellow-50"
+                  >
+                    <div className="flex items-center space-x-3 mb-3">
+                      <span className="font-semibold text-gray-900">Duplicate Record</span>
+                      {duplicate.match_type === 'email_match' && (
+                        <span className="badge bg-yellow-100 text-yellow-800">
+                          📧 Email Match
+                        </span>
+                      )}
+                      {duplicate.match_type === 'phone_match' && (
+                        <span className="badge bg-blue-100 text-blue-800">
+                          📞 Phone Match
+                        </span>
+                      )}
+                      {duplicate.match_type === 'both_match' && (
+                        <div className="flex items-center space-x-2">
+                          <span className="badge bg-yellow-100 text-yellow-800">
+                            📧 Email Match
+                          </span>
+                          <span className="text-gray-400">+</span>
+                          <span className="badge bg-blue-100 text-blue-800">
+                            📞 Phone Match
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* Duplicate Record (from file) */}
+                      <div className="bg-white p-4 rounded-lg border border-yellow-200">
+                        <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+                          <X className="h-4 w-4 text-yellow-600" />
+                          <span>From Upload File (Will be skipped)</span>
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {Object.entries(duplicate.record || {}).filter(([key]) => !key.includes('_normalized')).map(([key, value]) => (
+                            <div key={key} className="bg-gray-50 p-2 rounded border border-gray-200">
+                              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{key}</span>
+                              <p className="text-sm font-medium text-gray-900 mt-1">{String(value) || '-'}</p>
+                            </div>
                           ))}
+                        </div>
+                      </div>
+                      
+                      {/* Existing Record (in database) */}
+                      <div className="bg-white p-4 rounded-lg border border-green-200">
+                        <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          <span>Existing in Database (ID: {duplicate.existing_record?.id})</span>
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Company</span>
+                            <p className="text-sm font-medium text-gray-900 mt-1">{duplicate.existing_record?.company || '-'}</p>
+                          </div>
+                          <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Name</span>
+                            <p className="text-sm font-medium text-gray-900 mt-1">{duplicate.existing_record?.name || '-'}</p>
+                          </div>
+                          <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Surname</span>
+                            <p className="text-sm font-medium text-gray-900 mt-1">{duplicate.existing_record?.surname || '-'}</p>
+                          </div>
+                          <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email</span>
+                            <p className="text-sm font-medium text-gray-900 mt-1">{duplicate.existing_record?.email || '-'}</p>
+                          </div>
+                          <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Phone</span>
+                            <p className="text-sm font-medium text-gray-900 mt-1">{duplicate.existing_record?.phone || '-'}</p>
+                          </div>
+                          {duplicate.existing_record?.position && (
+                            <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Position</span>
+                              <p className="text-sm font-medium text-gray-900 mt-1">{duplicate.existing_record.position}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

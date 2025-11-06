@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RotateCcw, Clock, FileText, AlertCircle, CheckCircle2, XCircle, Loader2, Eye, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { RotateCcw, Clock, FileText, AlertCircle, CheckCircle2, XCircle, Loader2, Eye, ChevronDown, ChevronUp, RefreshCw, Trash2, Trash } from 'lucide-react'
 import api from '../../services/api'
 import toast from 'react-hot-toast'
 
@@ -40,6 +40,9 @@ interface Snapshot {
 export default function RollbackSnapshots() {
   const [showConfirm, setShowConfirm] = useState<number | null>(null)
   const [rollingBack, setRollingBack] = useState<number | null>(null)
+  const [deletingSnapshot, setDeletingSnapshot] = useState<number | null>(null)
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
   const [expandedSnapshots, setExpandedSnapshots] = useState<Set<number>>(new Set())
   const queryClient = useQueryClient()
 
@@ -81,18 +84,32 @@ export default function RollbackSnapshots() {
   }
 
   const formatDate = (timestamp: string | null) => {
-    if (!timestamp) return 'Unknown'
+    if (!timestamp) return { dateTime: 'Unknown', timeLabel: '' }
     try {
-      const date = new Date(timestamp)
-      return date.toLocaleString('en-US', {
+      // Ensure timestamp is treated as UTC if no timezone is specified
+      const timestampStr = timestamp.includes('+') || timestamp.endsWith('Z') 
+        ? timestamp 
+        : timestamp + 'Z'
+      const date = new Date(timestampStr)
+      
+      if (isNaN(date.getTime())) {
+        return { dateTime: 'Invalid date', timeLabel: '' }
+      }
+
+      // Format date and time in user's local timezone (UAE)
+      const dateTime = date.toLocaleString('en-US', {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         year: 'numeric',
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
+        hour12: true,
       })
+
+      return { dateTime, timeLabel: 'UAE Time' }
     } catch {
-      return 'Invalid date'
+      return { dateTime: 'Invalid date', timeLabel: '' }
     }
   }
 
@@ -106,6 +123,47 @@ export default function RollbackSnapshots() {
     setExpandedSnapshots(newExpanded)
   }
 
+  const handleDeleteSnapshot = async (snapshotId: number) => {
+    if (!snapshotId) return
+
+    setDeletingSnapshot(snapshotId)
+    try {
+      const response = await api.delete(`/upload/snapshots/${snapshotId}`)
+
+      if (response.data.success) {
+        toast.success('Snapshot deleted successfully')
+        refetch()
+      } else {
+        toast.error(response.data.message || 'Failed to delete snapshot')
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Error deleting snapshot')
+    } finally {
+      setDeletingSnapshot(null)
+    }
+  }
+
+  const handleDeleteAllSnapshots = async (olderThanDays?: number) => {
+    setDeletingAll(true)
+    try {
+      const response = await api.post('/upload/snapshots/delete-all', {
+        older_than_days: olderThanDays || null,
+      })
+
+      if (response.data.success) {
+        toast.success(`Successfully deleted ${response.data.deleted_count} snapshots`)
+        refetch()
+        setShowDeleteAllConfirm(false)
+      } else {
+        toast.error(response.data.message || 'Failed to delete snapshots')
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Error deleting snapshots')
+    } finally {
+      setDeletingAll(false)
+    }
+  }
+
   return (
     <div className="card border-blue-200">
       <div className="flex items-center space-x-3 mb-4">
@@ -115,9 +173,64 @@ export default function RollbackSnapshots() {
         <h2 className="text-lg font-semibold text-gray-900">Rollback Snapshots</h2>
       </div>
 
-      <p className="text-sm text-gray-600 mb-4">
-        View and restore previous bulk update snapshots. You can rollback changes made during bulk updates.
-      </p>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-600">
+          View and restore previous bulk update snapshots. You can rollback changes made during bulk updates.
+        </p>
+        {snapshots.length > 0 && (
+          <button
+            onClick={() => setShowDeleteAllConfirm(true)}
+            className="btn-secondary text-sm py-2 px-4"
+          >
+            <Trash className="h-4 w-4 mr-2" />
+            Delete All
+          </button>
+        )}
+      </div>
+
+      {/* Delete All Confirmation */}
+      {showDeleteAllConfirm && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start space-x-2 mb-3">
+            <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-900">
+                Delete All Snapshots?
+              </p>
+              <p className="text-xs text-red-700 mt-1">
+                This will permanently delete all {snapshots.length} snapshots. This action cannot be undone.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handleDeleteAllSnapshots()}
+              disabled={deletingAll}
+              className="flex-1 btn-primary bg-red-600 hover:bg-red-700 text-sm py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {deletingAll ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-3 w-3 mr-2" />
+                  Delete All Snapshots
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => setShowDeleteAllConfirm(false)}
+              disabled={deletingAll}
+              className="btn-secondary text-sm py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <XCircle className="h-3 w-3 mr-2" />
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
@@ -144,27 +257,37 @@ export default function RollbackSnapshots() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <h3 className="font-medium text-gray-900">
-                      {snapshot.snapshot_name}
-                    </h3>
-                    {snapshot.rolled_back ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                        Rolled back
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-                        <Clock className="h-3 w-3 mr-1" />
-                        Available
-                      </span>
-                    )}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <h3 className="font-medium text-gray-900">
+                        {snapshot.snapshot_name}
+                      </h3>
+                      {snapshot.rolled_back ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Rolled back
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                          <Clock className="h-3 w-3 mr-1" />
+                          Available
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center space-x-4 text-sm text-gray-600 mb-2">
                     <div className="flex items-center space-x-1">
                       <Clock className="h-3 w-3" />
-                      <span>{formatDate(snapshot.timestamp)}</span>
+                      {(() => {
+                        const { dateTime, timeLabel } = formatDate(snapshot.timestamp)
+                        return (
+                          <div className="flex flex-col">
+                            <span>{dateTime}</span>
+                            <span className="text-xs text-gray-400">{timeLabel}</span>
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div className="flex items-center space-x-1">
                       <FileText className="h-3 w-3" />
@@ -378,16 +501,35 @@ export default function RollbackSnapshots() {
                       </div>
                     </div>
                   ) : (
-                    !snapshot.rolled_back && (
+                    <div className="flex items-center space-x-2 mt-3">
+                      {!snapshot.rolled_back && (
+                        <button
+                          onClick={() => setShowConfirm(snapshot.id)}
+                          disabled={rollingBack === snapshot.id}
+                          className="btn-primary text-sm py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <RotateCcw className="h-3 w-3 mr-2" />
+                          Rollback
+                        </button>
+                      )}
                       <button
-                        onClick={() => setShowConfirm(snapshot.id)}
-                        disabled={rollingBack === snapshot.id}
-                        className="mt-3 btn-primary text-sm py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() => handleDeleteSnapshot(snapshot.id)}
+                        disabled={deletingSnapshot === snapshot.id || rollingBack === snapshot.id}
+                        className="btn-secondary bg-red-50 hover:bg-red-100 text-red-700 border-red-200 text-sm py-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <RotateCcw className="h-3 w-3 mr-2" />
-                        Rollback
+                        {deletingSnapshot === snapshot.id ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-3 w-3 mr-2" />
+                            Delete
+                          </>
+                        )}
                       </button>
-                    )
+                    </div>
                   )}
                 </div>
               </div>

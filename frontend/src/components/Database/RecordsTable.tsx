@@ -28,18 +28,37 @@ export default function RecordsTable({ searchTerm = '' }: RecordsTableProps) {
       const response = await api.get(`/records?${params.toString()}`)
       return response.data
     },
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   })
 
   const formatDate = (dateString: string | Date) => {
-    const date = new Date(dateString)
+    // Parse the date string - ensure it's treated as UTC if no timezone is specified
+    let date: Date
+    if (typeof dateString === 'string') {
+      // If timestamp doesn't have timezone info, append 'Z' to treat it as UTC
+      const timestampStr = dateString.includes('+') || dateString.endsWith('Z') 
+        ? dateString 
+        : dateString + 'Z'
+      date = new Date(timestampStr)
+    } else {
+      date = dateString
+    }
+    
+    // Validate date is valid
+    if (isNaN(date.getTime())) {
+      return { relativeTime: 'Invalid date', exactDateTime: 'Invalid date', timeLabel: '' }
+    }
+
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
     const diffMins = Math.floor(diffMs / 60000)
     const diffHours = Math.floor(diffMs / 3600000)
     const diffDays = Math.floor(diffMs / 86400000)
 
-    // Exact date and time
+    // Exact date and time in user's local timezone (no timezone abbreviation)
     const exactDateTime = date.toLocaleString('en-US', {
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, // Use browser's timezone
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -48,19 +67,38 @@ export default function RecordsTable({ searchTerm = '' }: RecordsTableProps) {
       hour12: true
     })
 
-    // Relative time
+    // Time label (UAE Time or Local Time)
+    const timeLabel = 'UAE Time'
+
+    // Relative time (calculated in milliseconds, timezone-independent)
     let relativeTime = ''
     if (diffMins < 1) relativeTime = 'Just now'
     else if (diffMins < 60) relativeTime = `${diffMins}m ago`
     else if (diffHours < 24) relativeTime = `${diffHours}h ago`
     else if (diffDays < 7) relativeTime = `${diffDays}d ago`
-    else relativeTime = exactDateTime
+    else {
+      // For older dates, show date without time
+      relativeTime = date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+    }
 
-    return { relativeTime, exactDateTime }
+    return { relativeTime, exactDateTime, timeLabel }
   }
 
   const isRecentlyUpdated = (updatedAt: string | Date) => {
-    const date = new Date(updatedAt)
+    let date: Date
+    if (typeof updatedAt === 'string') {
+      // If timestamp doesn't have timezone info, append 'Z' to treat it as UTC
+      const timestampStr = updatedAt.includes('+') || updatedAt.endsWith('Z') 
+        ? updatedAt 
+        : updatedAt + 'Z'
+      date = new Date(timestampStr)
+    } else {
+      date = updatedAt
+    }
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
     const diffHours = Math.floor(diffMs / 3600000)
@@ -142,7 +180,7 @@ export default function RecordsTable({ searchTerm = '' }: RecordsTableProps) {
               {records && records.length > 0 ? (
                 records.map((record, idx) => {
                   const recentlyUpdated = record.updated_at && isRecentlyUpdated(record.updated_at)
-                  const { relativeTime, exactDateTime } = formatDate(record.updated_at)
+                  const { relativeTime, exactDateTime, timeLabel } = formatDate(record.updated_at)
                   return (
                     <tr
                       key={record.id}
@@ -197,6 +235,9 @@ export default function RecordsTable({ searchTerm = '' }: RecordsTableProps) {
                             </div>
                             <span className="text-xs text-gray-500 mt-0.5" title={exactDateTime}>
                               {exactDateTime}
+                            </span>
+                            <span className="text-xs text-gray-400 mt-0.5">
+                              {timeLabel}
                             </span>
                           </div>
                         )}

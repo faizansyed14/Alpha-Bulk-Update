@@ -23,6 +23,10 @@ from app.schemas.upload import (
     SnapshotResponse,
     RollbackRequest,
     RollbackResponse,
+    DeleteSnapshotRequest,
+    DeleteSnapshotResponse,
+    DeleteAllSnapshotsRequest,
+    DeleteAllSnapshotsResponse,
 )
 
 router = APIRouter()
@@ -232,4 +236,45 @@ async def rollback_snapshot(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error rolling back snapshot: {str(e)}")
+
+
+@router.delete("/snapshots/{snapshot_id}", response_model=DeleteSnapshotResponse)
+async def delete_snapshot(
+    snapshot_id: int,
+    session: AsyncSession = Depends(get_db)
+):
+    """Delete a specific snapshot"""
+    try:
+        results = await database_updater.delete_snapshot(
+            session,
+            snapshot_id
+        )
+        
+        return DeleteSnapshotResponse(
+            success=results["success"],
+            message=results["message"]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting snapshot: {str(e)}")
+
+
+@router.post("/snapshots/delete-all", response_model=DeleteAllSnapshotsResponse)
+async def delete_all_snapshots(
+    request: DeleteAllSnapshotsRequest,
+    session: AsyncSession = Depends(get_db)
+):
+    """Delete all snapshots, optionally filtered by age"""
+    try:
+        results = await database_updater.delete_all_snapshots(
+            session,
+            request.older_than_days
+        )
+        
+        return DeleteAllSnapshotsResponse(
+            success=results["success"],
+            message=results["message"],
+            deleted_count=results.get("deleted_count", 0)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting snapshots: {str(e)}")
 

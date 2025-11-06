@@ -5,7 +5,7 @@ Database Updater Service - Preview and Update Logic
 from typing import List, Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models.contact import Contact
 from app.models.audit import BulkUpdateSnapshot
 from app.services.identity_matcher import IdentityMatcher, IdentityMatchType
@@ -200,13 +200,27 @@ class DatabaseUpdater:
         # Step 1: Create backup snapshot of records that will be affected
         backup_records = []
         affected_ids = set()
+        has_updates = False
+        has_new_records = False
         
         # Collect IDs that will be updated
         for update_item in preview_data.get("updates", []):
             if selected_ids is None:
                 affected_ids.add(update_item["id"])
+                has_updates = True
             elif len(selected_ids) > 0 and update_item["id"] in selected_ids:
                 affected_ids.add(update_item["id"])
+                has_updates = True
+        
+        # Check if there are new records to be inserted
+        for idx, new_item in enumerate(preview_data.get("new_records", [])):
+            temp_id = idx + 10000
+            if selected_ids is None:
+                has_new_records = True
+                break
+            elif len(selected_ids) > 0 and temp_id in selected_ids:
+                has_new_records = True
+                break
         
         # Fetch current state of records that will be updated
         if affected_ids:
@@ -228,9 +242,9 @@ class DatabaseUpdater:
                     "phone_normalized": contact.phone_normalized,
                 })
         
-        # Create snapshot only if there are records to backup
+        # Create snapshot if there are updates OR new records (need to track for rollback)
         snapshot_id = None
-        if backup_records:
+        if has_updates or has_new_records:
             snapshot_name = f"Bulk Update - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             
             # Estimate what will happen (before actual update)
@@ -251,6 +265,10 @@ class DatabaseUpdater:
                 "estimated_inserted_count": estimated_inserts,
                 "total_backed_up_records": len(backup_records),
             }
+            
+            # Initialize empty backup_records if only new records (no updates)
+            if not backup_records:
+                backup_records = []
             
             # Store the preview data with changes for display in rollback UI
             # Filter preview_data to only include selected records
@@ -314,6 +332,11 @@ class DatabaseUpdater:
                 contact.email_normalized = self.email_normalizer.normalize(contact.email)
                 contact.phone_normalized = self.phone_normalizer.normalize(contact.phone)
                 
+                # Explicitly update the updated_at timestamp to ensure it's always updated
+                new_timestamp = datetime.now(timezone.utc)
+                contact.updated_at = new_timestamp
+                print(f"Bulk update: Setting updated_at for record {update_item['id']} to {new_timestamp}")
+                
                 results["updated_count"] += 1
             except Exception as e:
                 results["errors"].append(f"Error updating record {update_item['id']}: {str(e)}")
@@ -369,6 +392,9 @@ class DatabaseUpdater:
                 if snapshot.update_details is None:
                     snapshot.update_details = {}
                 snapshot.update_details["inserted_record_ids"] = inserted_contact_ids
+                # Mark JSON field as modified so SQLAlchemy detects the change
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(snapshot, "update_details")
                 await session.flush()
         
         # Commit changes
@@ -433,7 +459,7 @@ class DatabaseUpdater:
                 return results
             
             # Get backup records
-            backup_records = snapshot.records_backup
+            backup_records = snapshot.records_backup or []
             update_details = snapshot.update_details or {}
             inserted_record_ids = update_details.get("inserted_record_ids", [])
             
@@ -441,9 +467,13 @@ class DatabaseUpdater:
                 results["message"] = "No backup records or inserted records found in snapshot"
                 return results
             
+            # Debug: Log what we're about to rollback
+            print(f"Rollback: backup_records count: {len(backup_records)}, inserted_record_ids: {inserted_record_ids}")
+            
             # Step 1: Delete newly inserted records
             deleted_count = 0
             if inserted_record_ids:
+                print(f"Attempting to delete {len(inserted_record_ids)} inserted records: {inserted_record_ids}")
                 for record_id in inserted_record_ids:
                     try:
                         result = await session.execute(
@@ -452,10 +482,16 @@ class DatabaseUpdater:
                         contact = result.scalar_one_or_none()
                         
                         if contact:
+                            print(f"Deleting record ID: {record_id} - {contact.email}")
                             await session.delete(contact)
                             deleted_count += 1
+                        else:
+                            print(f"Record ID {record_id} not found in database")
+                            results["errors"].append(f"Record {record_id} not found for deletion")
                     except Exception as e:
+                        print(f"Error deleting record {record_id}: {str(e)}")
                         results["errors"].append(f"Error deleting inserted record {record_id}: {str(e)}")
+                print(f"Successfully deleted {deleted_count} records")
             
             # Step 2: Restore updated records
             restored_count = 0
@@ -589,4 +625,102 @@ class DatabaseUpdater:
             }
         except Exception as e:
             return None
+    
+    async def delete_snapshot(
+        self,
+        session: AsyncSession,
+        snapshot_id: int
+    ) -> Dict:
+        """
+        Delete a specific snapshot.
+        
+        Args:
+            session: Database session
+            snapshot_id: ID of the snapshot to delete
+        
+        Returns:
+            Dict with deletion results
+        """
+        results = {
+            "success": False,
+            "message": "",
+        }
+        
+        try:
+            # Get snapshot
+            result = await session.execute(
+                select(BulkUpdateSnapshot).where(BulkUpdateSnapshot.id == snapshot_id)
+            )
+            snapshot = result.scalar_one_or_none()
+            
+            if not snapshot:
+                results["message"] = "Snapshot not found"
+                return results
+            
+            # Delete snapshot
+            await session.delete(snapshot)
+            await session.commit()
+            
+            results["success"] = True
+            results["message"] = "Snapshot deleted successfully"
+            
+        except Exception as e:
+            await session.rollback()
+            results["message"] = f"Error deleting snapshot: {str(e)}"
+        
+        return results
+    
+    async def delete_all_snapshots(
+        self,
+        session: AsyncSession,
+        older_than_days: Optional[int] = None
+    ) -> Dict:
+        """
+        Delete all snapshots, optionally filtered by age.
+        
+        Args:
+            session: Database session
+            older_than_days: If provided, only delete snapshots older than this many days
+        
+        Returns:
+            Dict with deletion results
+        """
+        results = {
+            "success": False,
+            "message": "",
+            "deleted_count": 0,
+        }
+        
+        try:
+            from datetime import datetime, timedelta
+            
+            query = select(BulkUpdateSnapshot)
+            
+            # Filter by age if specified
+            if older_than_days is not None:
+                cutoff_date = datetime.now() - timedelta(days=older_than_days)
+                query = query.where(BulkUpdateSnapshot.timestamp < cutoff_date)
+            
+            result = await session.execute(query)
+            snapshots = result.scalars().all()
+            
+            deleted_count = 0
+            for snapshot in snapshots:
+                await session.delete(snapshot)
+                deleted_count += 1
+            
+            await session.commit()
+            
+            results["success"] = True
+            results["deleted_count"] = deleted_count
+            if older_than_days:
+                results["message"] = f"Deleted {deleted_count} snapshots older than {older_than_days} days"
+            else:
+                results["message"] = f"Deleted {deleted_count} snapshots"
+            
+        except Exception as e:
+            await session.rollback()
+            results["message"] = f"Error deleting snapshots: {str(e)}"
+        
+        return results
 

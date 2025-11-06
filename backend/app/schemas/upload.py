@@ -103,3 +103,26 @@ class RollbackResponse(BaseModel):
     deleted_count: int = 0
     errors: List[str] = []
 
+
+class DeleteSnapshotRequest(BaseModel):
+    """Request for deleting a snapshot"""
+    snapshot_id: int
+
+
+class DeleteSnapshotResponse(BaseModel):
+    """Response for deleting a snapshot"""
+    success: bool
+    message: str
+
+
+class DeleteAllSnapshotsRequest(BaseModel):
+    """Request for deleting all snapshots"""
+    older_than_days: Optional[int] = None  # If provided, only delete snapshots older than this many days
+
+
+class DeleteAllSnapshotsResponse(BaseModel):
+    """Response for deleting all snapshots"""
+    success: bool
+    message: str
+    deleted_count: int = 0
+

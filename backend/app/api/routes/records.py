@@ -134,9 +134,16 @@ async def update_record(
         if "phone" in update_data:
             contact.phone_normalized = phone_normalizer.normalize(contact.phone)
         
+        # Explicitly update the updated_at timestamp to ensure it's always updated
+        from datetime import datetime, timezone
+        new_timestamp = datetime.now(timezone.utc)
+        contact.updated_at = new_timestamp
+        print(f"Updating record {record_id}: Setting updated_at to {new_timestamp}")
+        
         await session.commit()
         await session.refresh(contact)
         
+        print(f"Record {record_id} updated_at after refresh: {contact.updated_at}")
         return ContactResponse.model_validate(contact)
     
     except HTTPException:
