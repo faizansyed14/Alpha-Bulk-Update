@@ -37,3 +37,7 @@ python-dateutil==2.8.2
 # Logging
 structlog==23.2.0
 
+# AWS S3
+boto3==1.34.0
+botocore==1.34.0
+

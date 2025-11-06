@@ -12,6 +12,8 @@ import json
 from app.db.base import get_db
 from app.services.excel_processor import ExcelProcessor
 from app.services.database_updater import DatabaseUpdater
+from app.services.s3_storage import s3_storage
+from app.settings import settings
 from app.schemas.upload import (
     UploadResponse,
     ProcessSheetsRequest,
@@ -28,12 +30,18 @@ from app.schemas.upload import (
     DeleteAllSnapshotsRequest,
     DeleteAllSnapshotsResponse,
 )
+import os
+from pathlib import Path
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 excel_processor = ExcelProcessor()
 database_updater = DatabaseUpdater()
 
-# In-memory storage for processed files (in production, use Redis or database)
+# In-memory storage for processed files (temporary, for processing)
 processed_files: Dict[str, Any] = {}
 
 
@@ -62,13 +70,39 @@ async def upload_file(
         # Get sheet names
         sheet_names = excel_processor.get_sheet_names(file_content, file_type)
         
-        # Store file content temporarily (in production, save to storage)
+        # Save file to storage (S3 if configured, otherwise local filesystem)
         file_id = f"{file.filename}_{hash(file_content)}"
+        saved_path = None
+        
+        # Try S3 first if configured
+        if s3_storage.is_available():
+            saved_path = s3_storage.upload_file(file_content, file.filename, "uploads")
+            if saved_path:
+                logger.info(f"File saved to S3: {saved_path}")
+        else:
+            # Save to local filesystem (EBS)
+            upload_dir = Path(settings.UPLOAD_DIR)
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate unique filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_filename = f"{timestamp}_{file.filename}"
+            file_path = upload_dir / safe_filename
+            
+            # Save file
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+            
+            saved_path = str(file_path)
+            logger.info(f"File saved to local filesystem: {saved_path}")
+        
+        # Store file info temporarily for processing
         processed_files[file_id] = {
             "filename": file.filename,
             "content": file_content,
             "file_type": file_type,
             "sheet_names": sheet_names,
+            "saved_path": saved_path,
         }
         
         return UploadResponse(
